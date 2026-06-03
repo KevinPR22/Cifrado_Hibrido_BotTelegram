@@ -1,51 +1,51 @@
-# 🔐 Bot de Cifrado AES-256 para Telegram
+# Plataforma de Cifrado Híbrido AES-256 sobre Telegram
 
-Bot de Telegram que implementa un algoritmo de cifrado compuesto personalizado.
+Sistema de mensajería segura que implementa un pipeline de derivación de clave de diseño propio acoplado al estándar criptográfico AES-256 en modo CBC, utilizando la API de Telegram como capa de transporte.
 
-## Algoritmo implementado
+## Algoritmo Implementado
 
-```
-Clave usuario
+El núcleo técnico del proyecto es la transformación estructural de la clave ingresada por el usuario antes de alimentar el motor de cifrado:
+
+```text
+Clave del usuario
      │
      ▼
-[1] Conversión a ASCII        → 'CASA' = [67, 65, 83, 65]
+[1] Conversión a UTF-8          → Soporte seguro para caracteres Unicode y extendidos.
      │
      ▼
-[2] Padding hasta 32 bytes    → repite hasta completar AES-256
+[2] Padding Cíclico             → Expansión de la clave hasta 32 bytes (Requisito estricto de AES-256).
      │
      ▼
-[3] Transposición             → intercala mitades del array
+[3] Transposición de Bloques    → Inversión de secuencia y cruce de extremos para destruir patrones lineales.
      │
      ▼
-[4] Salt (XOR con 7)          → dificulta análisis de patrones
+[4] Salting (XOR Dinámico)      → Ofuscación a nivel de bits utilizando la fórmula: (longitud * 17) mod 251.
      │
      ▼
-[5] AES-256 CBC               → cifrado estándar de industria
+[5] AES-256 (Modo CBC)          → Cifrado estándar de la industria con inyección de Vector de Inicialización (IV).
      │
      ▼
-[6] Base64                    → texto seguro para transmitir
-```
+[6] Codificación Base64         → Empaquetado de caracteres para evitar la corrupción de datos en la transmisión.
 
 ## Instalación
 
-```bash
-# 1. Instalar dependencias
+# 1. Instalar dependencias requeridas
 pip install -r requirements.txt
 
-# 2. Crear tu bot en Telegram
-#    - Abre Telegram y busca @BotFather
-#    - Escribe /newbot y sigue los pasos
-#    - Copia el TOKEN que te da
+# 2. Configurar el bot en Telegram
+#    - Buscar a @BotFather en la aplicación
+#    - Ejecutar el comando /newbot y seguir las instrucciones
+#    - Copiar el TOKEN HTTP API generado
 
-# 3. Pegar el token en bot.py
-#    Abre bot.py y reemplaza esta línea:
-#    TOKEN = "PON_AQUI_TU_TOKEN_DE_BOTFATHER"
+# 3. Vincular credenciales en el código
+#    - Abrir el archivo bot.py
+#    - Reemplazar la variable con el token obtenido:
+#      TOKEN = "TU_TOKEN_AQUI"
 
-# 4. Correr el bot
+# 4. Iniciar el servidor
 python bot.py
-```
 
-## Probar sin Telegram (primero)
+##Pruebas Locales
 
 ```bash
 python test_cifrado.py
@@ -68,6 +68,6 @@ python test_cifrado.py
 ## Tecnologías usadas
 
 - **Python 3.10+**
-- **AES-256 CBC** (pycryptodome) — Estándar de cifrado de industria
+- **AES-256 CBC** (pycryptodome) — Estándar de cifrado
 - **python-telegram-bot** — Interfaz de comunicación cliente-servidor
 - **Base64** — Encoding para transmisión segura de datos binarios

@@ -4,27 +4,23 @@
 
 import logging
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    ConversationHandler, ContextTypes, filters
-)
-# Importes del motor criptográfico local
+from telegram.ext import (ApplicationBuilder, CommandHandler, MessageHandler,ConversationHandler, ContextTypes, filters)
 from cifrado import cifrar, descifrar, info_clave, registrar_evento
 
-# Configuración del Token de Telegram
+# [Configuración] Token de acceso. 
+# Nota: En un entorno de producción estricto, esto migraría a un archivo .env
 TOKEN = "8905517262:AAHwpEDcnzsh2jmLcA1Q7WUdH8HlvYP841Y"  
 
-# Configuración básica del sistema de logs para monitoreo en consola
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# Definición de estados para la máquina de estados
+# [FSM] Definición de los 5 estados transaccionales del bot
 MENU, ESPERAR_CLAVE, ESPERAR_MENSAJE, ESPERAR_CLAVE_DESC, ESPERAR_CIFRADO = range(5)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Manejador del comando /start. Inicializa la sesión y muestra el menú."""
+    """Punto de entrada. Inicializa la sesión y renderiza la interfaz principal."""
     usuario = update.message.from_user.username or update.message.from_user.first_name
     registrar_evento("CONEXION_CLIENTE", f"Usuario '{usuario}' inicializó sesión.")
     
@@ -42,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return MENU
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enruta la opción seleccionada por el usuario hacia el estado correspondiente."""
+    """Enrutador principal. Dirige el flujo según la selección del usuario."""
     texto = update.message.text
 
     if texto == "[ Cifrar mensaje ]":
@@ -76,11 +72,11 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return MENU
 
 async def recibir_clave(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Almacena la clave en el diccionario temporal del usuario (user_data)."""
+    """Almacena la clave temporalmente en la memoria de la sesión (user_data)."""
     clave = update.message.text
     context.user_data['clave'] = clave
 
-    # Si el modo es 'info', muestra el reporte en pantalla y regresa al menú
+    # Bifurcación para la herramienta de auditoría visual
     if context.user_data['modo'] == 'info':
         info = info_clave(clave)
         teclado = [["[ Cifrar mensaje ]", "[ Descifrar mensaje ]"], ["[ Ver transformación de clave ]"]]
@@ -96,7 +92,7 @@ async def recibir_clave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ESPERAR_MENSAJE
 
 async def recibir_mensaje_y_cifrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ejecuta el cifrado del mensaje y retorna la trama en Base64."""
+    """Llama al motor criptográfico y gestiona la respuesta al cliente."""
     mensaje  = update.message.text
     clave    = context.user_data.get('clave', '')
 
@@ -112,15 +108,19 @@ async def recibir_mensaje_y_cifrar(update: Update, context: ContextTypes.DEFAULT
             parse_mode="Markdown",
             reply_markup=reply_markup
         )
+    except ValueError as ve:
+        # [Seguridad] Captura errores de validación (ej. límite de longitud)
+        registrar_evento("VALIDACION_ERROR", str(ve))
+        await update.message.reply_text(f"[ERROR] {ve}")
     except Exception as e:
-        registrar_evento("EXCEPTION_ERROR", f"Fallo en el cifrado: {str(e)}")
-        # Se oculta el error real al usuario por motivos de seguridad
-        await update.message.reply_text("[ERROR] Falla interna en la capa criptográfica. No se pudo procesar la solicitud.")
+        # [Seguridad] Oculta excepciones críticas al usuario para prevenir fuga de información
+        registrar_evento("EXCEPTION_ERROR", f"Fallo interno: {str(e)}")
+        await update.message.reply_text("[ERROR] Falla interna en la capa criptográfica.")
 
     return MENU
 
 async def recibir_clave_descifrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Prepara el sistema para recibir la trama en Base64."""
+    """Prepara el estado para la recepción de la trama cifrada."""
     context.user_data['clave'] = update.message.text
     await update.message.reply_text(
         ">> *Fase 2: Recepción de Criptograma*\n\nPega la trama alfanumérica cifrada en Base64:",
@@ -129,7 +129,7 @@ async def recibir_clave_descifrar(update: Update, context: ContextTypes.DEFAULT_
     return ESPERAR_CIFRADO
 
 async def recibir_cifrado_y_descifrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Intenta descifrar la trama Base64. Maneja fallos de autenticidad."""
+    """Envía la trama al motor para su descifrado y verifica la integridad."""
     texto_cifrado = update.message.text
     clave         = context.user_data.get('clave', '')
 
@@ -144,7 +144,12 @@ async def recibir_cifrado_y_descifrar(update: Update, context: ContextTypes.DEFA
             parse_mode="Markdown",
             reply_markup=reply_markup
         )
+    except ValueError as ve:
+        # [Seguridad] Captura errores de validación de la llave
+        registrar_evento("VALIDACION_ERROR", str(ve))
+        await update.message.reply_text(f"[ERROR] {ve}")
     except Exception as e:
+        # [Seguridad] Captura fallos de autenticidad (Padding PKCS#7 incorrecto)
         registrar_evento("AUTH_FAILURE", "Intento fallido de descifrado o corrupción de trama.")
         await update.message.reply_text(
             "[ERROR] *Violación de Integridad / Clave Incorrecta.*\n"
@@ -154,14 +159,15 @@ async def recibir_cifrado_y_descifrar(update: Update, context: ContextTypes.DEFA
     return MENU
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Permite abortar la operación actual"""
+    """Manejador de interrupción. Aborta el flujo actual."""
     await update.message.reply_text("[!] Conexión abortada. Envíe /start para reanudar.")
     return ConversationHandler.END
 
 def main():
-    """Punto de entrada principal. Configura los manejadores y levanta el bot."""
+    """Configura el handler conversacional y levanta el servicio."""
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Mapeo estricto de comandos y estados
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
